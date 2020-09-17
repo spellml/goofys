@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/s3"
 
 	"github.com/jacobsa/fuse"
 	"github.com/jacobsa/fuse/fuseops"
@@ -52,6 +53,8 @@ type Goofys struct {
 	bucket string
 
 	flags *FlagStorage
+
+	storageBackend StorageBackend
 
 	umask uint32
 
@@ -198,6 +201,7 @@ func newGoofys(ctx context.Context, bucket string, flags *FlagStorage,
 		return nil
 	}
 	_, fs.gcs = cloud.Delegate().(*GCS3)
+	fs.storageBackend = cloud
 
 	randomObjectName := prefix + (RandStringBytesMaskImprSrc(32))
 	err = cloud.Init(randomObjectName)
@@ -1205,5 +1209,16 @@ func (fs *Goofys) GetFullName(id fuseops.InodeID) *string {
 		return nil
 	}
 	return inode.FullName()
+}
 
+// Expose the raw S3 object from the underlying 'storageBackend'.
+// Will error if the 'storageBackend' is not 'S3Backend' or 'GCS3' backend
+func (fs *Goofys) GetRawS3() (*s3.S3, error) {
+	if s3Backend, ok := fs.storageBackend.Delegate().(*S3Backend); ok {
+		return s3Backend.S3, nil
+	}
+	if gcs3Backend, ok := fs.storageBackend.Delegate().(*GCS3); ok {
+		return gcs3Backend.S3, nil
+	}
+	return nil, fmt.Errorf("Backend Config is not S3")
 }
