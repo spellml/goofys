@@ -114,6 +114,9 @@ func (c *S3Config) ToAwsConfig(flags *FlagStorage) (*aws.Config, error) {
 				}
 				p.RoleSessionName = c.RoleSessionName
 			})
+	} else if c.Credentials == nil {
+		// If neither RoleArn or AccessKey is set, use AnonymousCredentials
+		c.Credentials = credentials.AnonymousCredentials
 	}
 
 	if c.Credentials != nil {
