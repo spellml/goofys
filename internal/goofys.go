@@ -1211,6 +1211,14 @@ func (fs *Goofys) GetFullName(id fuseops.InodeID) *string {
 	return inode.FullName()
 }
 
+func (gc *GoofysCacheBucket) GetFileSize(path string) (uint64, error) {
+	headOutput, err := fs.storageBackend.HeadBlob(&HeadBlobInput{Key: path})\
+	if err != nil {
+		return 0, err
+	}
+	return headOutput.BlobItemOutput.Size, nil
+}
+
 // Expose the raw S3 object from the underlying 'storageBackend'.
 // Will error if the 'storageBackend' is not 'S3Backend' or 'GCS3' backend
 func (fs *Goofys) GetRawS3() (*s3.S3, error) {
