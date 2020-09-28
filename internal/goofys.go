@@ -1211,8 +1211,8 @@ func (fs *Goofys) GetFullName(id fuseops.InodeID) *string {
 	return inode.FullName()
 }
 
-func (gc *GoofysCacheBucket) GetFileSize(path string) (uint64, error) {
-	headOutput, err := fs.storageBackend.HeadBlob(&HeadBlobInput{Key: path})\
+func (fs *Goofys) GetFileSize(path string) (uint64, error) {
+	headOutput, err := fs.storageBackend.HeadBlob(&HeadBlobInput{Key: path})
 	if err != nil {
 		return 0, err
 	}
