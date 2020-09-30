@@ -15,6 +15,9 @@
 package internal
 
 import (
+	"io"
+	"os"
+
 	. "github.com/kahing/goofys/api/common"
 
 	"context"
@@ -29,8 +32,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 
 	"github.com/jacobsa/fuse"
 	"github.com/jacobsa/fuse/fuseops"
@@ -1217,6 +1222,32 @@ func (fs *Goofys) GetFileSize(path string) (uint64, error) {
 		return 0, err
 	}
 	return headOutput.BlobItemOutput.Size, nil
+}
+
+func (fs *Goofys) DownloadToFile(ctx context.Context, key string, count int, target *os.File) (uint64, error) {
+	rawS3, err := fs.GetRawS3()
+	if err == nil {
+		// No error means it's an S3 backend and we can use the downloader
+		s3Input := &s3.GetObjectInput{
+			Bucket: &fs.bucket,
+			Key:    &key,
+		}
+		if count > 0 {
+			s3Input.Range = aws.String(fmt.Sprintf("bytes=0-%v", count-1))
+		}
+		downloader := s3manager.NewDownloaderWithClient(rawS3)
+		written, err := downloader.DownloadWithContext(ctx, target, s3Input)
+		return uint64(written), err
+	}
+	// Otherwise just fall back to GetBlob()
+	getBlobOutput, err := fs.storageBackend.GetBlob(&GetBlobInput{
+		Key:   &key,
+		Start: 0,
+		Count: count,
+	})
+	written, err := io.Copy(target, getBlobOutput.Body)
+	getBlobOutput.Body.Close()
+	return uint64(written), err
 }
 
 // Expose the raw S3 object from the underlying 'storageBackend'.
