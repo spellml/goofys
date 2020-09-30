@@ -1224,7 +1224,7 @@ func (fs *Goofys) GetFileSize(path string) (uint64, error) {
 	return headOutput.BlobItemOutput.Size, nil
 }
 
-func (fs *Goofys) DownloadToFile(ctx context.Context, key string, count int, target *os.File) (uint64, error) {
+func (fs *Goofys) DownloadToFile(ctx context.Context, key string, count uint64, target *os.File) (uint64, error) {
 	rawS3, err := fs.GetRawS3()
 	if err == nil {
 		// No error means it's an S3 backend and we can use the downloader
@@ -1241,7 +1241,7 @@ func (fs *Goofys) DownloadToFile(ctx context.Context, key string, count int, tar
 	}
 	// Otherwise just fall back to GetBlob()
 	getBlobOutput, err := fs.storageBackend.GetBlob(&GetBlobInput{
-		Key:   &key,
+		Key:   key,
 		Start: 0,
 		Count: count,
 	})
