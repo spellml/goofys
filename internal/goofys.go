@@ -1245,6 +1245,9 @@ func (fs *Goofys) DownloadToFile(ctx context.Context, key string, count uint64, 
 		Start: 0,
 		Count: count,
 	})
+	if err != nil {
+		return 0, err
+	}
 	written, err := io.Copy(target, getBlobOutput.Body)
 	getBlobOutput.Body.Close()
 	return uint64(written), err
