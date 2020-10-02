@@ -1265,11 +1265,10 @@ func (fs *Goofys) getRawS3() (*s3.S3, error) {
 	return nil, fmt.Errorf("Backend Config is not S3")
 }
 
-
 // ListBlobs is a public method on goofys that lets callers iterate over files in the configured backend
 // and execute a function on each page of Blobs.
 // NOTE: The bulk of this was inspired and copied from internal/dir.go/listBlobsSafe()
-func (fs *Goofys) ListBlobs(ctx, context.Context, prefix string, fn func([]BlobItemOutput) bool) error {
+func (fs *Goofys) ListBlobs(ctx context.Context, prefix string, fn func([]BlobItemOutput) bool) error {
 	res := &ListBlobsOutput{
 		IsTruncated: true, // Just to get the loop started
 	}
@@ -1279,7 +1278,7 @@ func (fs *Goofys) ListBlobs(ctx, context.Context, prefix string, fn func([]BlobI
 			break
 		}
 		listBlobsInput := &ListBlobsInput{
-			Prefix:    &prefix,
+			Prefix: &prefix,
 			// Get the continuation token from the prior result.
 			ContinuationToken: res.NextContinuationToken,
 		}
