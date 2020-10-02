@@ -1225,7 +1225,7 @@ func (fs *Goofys) GetFileSize(path string) (uint64, error) {
 }
 
 func (fs *Goofys) DownloadToFile(ctx context.Context, key string, count uint64, target *os.File) (uint64, error) {
-	rawS3, err := fs.GetRawS3()
+	rawS3, err := fs.getRawS3()
 	if err == nil {
 		// No error means it's an S3 backend and we can use the downloader
 		s3Input := &s3.GetObjectInput{
@@ -1255,7 +1255,7 @@ func (fs *Goofys) DownloadToFile(ctx context.Context, key string, count uint64, 
 
 // Expose the raw S3 object from the underlying 'storageBackend'.
 // Will error if the 'storageBackend' is not 'S3Backend' or 'GCS3' backend
-func (fs *Goofys) GetRawS3() (*s3.S3, error) {
+func (fs *Goofys) getRawS3() (*s3.S3, error) {
 	if s3Backend, ok := fs.storageBackend.Delegate().(*S3Backend); ok {
 		return s3Backend.S3, nil
 	}
@@ -1263,4 +1263,34 @@ func (fs *Goofys) GetRawS3() (*s3.S3, error) {
 		return gcs3Backend.S3, nil
 	}
 	return nil, fmt.Errorf("Backend Config is not S3")
+}
+
+
+// ListBlobs is a public method on goofys that lets callers iterate over files in the configured backend
+// and execute a function on each page of Blobs.
+// NOTE: The bulk of this was inspired and copied from internal/dir.go/listBlobsSafe()
+func (fs *Goofys) ListBlobs(ctx, context.Context, prefix string, fn func([]BlobItemOutput) bool) error {
+	res := &ListBlobsOutput{
+		IsTruncated: true, // Just to get the loop started
+	}
+
+	for res.IsTruncated {
+		if ctx.Err() != nil {
+			break
+		}
+		listBlobsInput := &ListBlobsInput{
+			Prefix:    &prefix,
+			// Get the continuation token from the prior result.
+			ContinuationToken: res.NextContinuationToken,
+		}
+		res, err = fs.storageBackend.ListBlobs(listBlobsInput)
+		if err != nil {
+			return err
+		}
+
+		if len(res.Items) == 0 || !fn(res.Items) {
+			break
+		}
+	}
+	return nil
 }
