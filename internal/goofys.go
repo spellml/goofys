@@ -1282,7 +1282,7 @@ func (fs *Goofys) ListBlobs(ctx context.Context, prefix string, fn func([]BlobIt
 			// Get the continuation token from the prior result.
 			ContinuationToken: res.NextContinuationToken,
 		}
-		res, err = fs.storageBackend.ListBlobs(listBlobsInput)
+		res, err := fs.storageBackend.ListBlobs(listBlobsInput)
 		if err != nil {
 			return err
 		}
