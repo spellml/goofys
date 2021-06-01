@@ -15,11 +15,15 @@
 package internal
 
 import (
+	"io"
+	"os"
+
 	. "github.com/kahing/goofys/api/common"
 
 	"context"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"net/url"
 	"runtime/debug"
 	"strings"
@@ -28,14 +32,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/service/s3"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 
 	"github.com/jacobsa/fuse"
 	"github.com/jacobsa/fuse/fuseops"
 	"github.com/jacobsa/fuse/fuseutil"
 
 	"github.com/sirupsen/logrus"
-	"net/http"
 )
 
 // goofys is a Filey System written in Go. All the backend data is
@@ -52,6 +58,8 @@ type Goofys struct {
 	bucket string
 
 	flags *FlagStorage
+
+	storageBackend StorageBackend
 
 	umask uint32
 
@@ -198,6 +206,7 @@ func newGoofys(ctx context.Context, bucket string, flags *FlagStorage,
 		return nil
 	}
 	_, fs.gcs = cloud.Delegate().(*GCS3)
+	fs.storageBackend = cloud
 
 	randomObjectName := prefix + (RandStringBytesMaskImprSrc(32))
 	err = cloud.Init(randomObjectName)
@@ -1194,4 +1203,94 @@ func (fs *Goofys) Rename(
 		}
 	}
 	return
+}
+
+// return full name of the given inode
+func (fs *Goofys) GetFullName(id fuseops.InodeID) *string {
+	fs.mu.Lock()
+	inode := fs.inodes[id]
+	fs.mu.Unlock()
+	if inode == nil {
+		return nil
+	}
+	return inode.FullName()
+}
+
+func (fs *Goofys) GetFileSize(path string) (uint64, error) {
+	headOutput, err := fs.storageBackend.HeadBlob(&HeadBlobInput{Key: path})
+	if err != nil {
+		return 0, err
+	}
+	return headOutput.BlobItemOutput.Size, nil
+}
+
+func (fs *Goofys) DownloadToFile(ctx context.Context, key string, count uint64, target *os.File) (uint64, error) {
+	rawS3, err := fs.getRawS3()
+	if err == nil {
+		// No error means it's an S3 backend and we can use the downloader
+		s3Input := &s3.GetObjectInput{
+			Bucket: &fs.bucket,
+			Key:    &key,
+		}
+		if count > 0 {
+			s3Input.Range = aws.String(fmt.Sprintf("bytes=0-%v", count-1))
+		}
+		downloader := s3manager.NewDownloaderWithClient(rawS3)
+		written, err := downloader.DownloadWithContext(ctx, target, s3Input)
+		return uint64(written), err
+	}
+	// Otherwise just fall back to GetBlob()
+	getBlobOutput, err := fs.storageBackend.GetBlob(&GetBlobInput{
+		Key:   key,
+		Start: 0,
+		Count: count,
+	})
+	if err != nil {
+		return 0, err
+	}
+	written, err := io.Copy(target, getBlobOutput.Body)
+	getBlobOutput.Body.Close()
+	return uint64(written), err
+}
+
+// Expose the raw S3 object from the underlying 'storageBackend'.
+// Will error if the 'storageBackend' is not 'S3Backend' or 'GCS3' backend
+func (fs *Goofys) getRawS3() (*s3.S3, error) {
+	if s3Backend, ok := fs.storageBackend.Delegate().(*S3Backend); ok {
+		return s3Backend.S3, nil
+	}
+	if gcs3Backend, ok := fs.storageBackend.Delegate().(*GCS3); ok {
+		return gcs3Backend.S3, nil
+	}
+	return nil, fmt.Errorf("Backend Config is not S3")
+}
+
+// ListBlobs is a public method on goofys that lets callers iterate over files in the configured backend
+// and execute a function on each page of Blobs.
+// NOTE: The bulk of this was inspired and copied from internal/dir.go/listBlobsSafe()
+func (fs *Goofys) ListBlobs(ctx context.Context, prefix string, fn func([]BlobItemOutput) bool) error {
+	res := &ListBlobsOutput{
+		IsTruncated: true, // Just to get the loop started
+	}
+
+	for res.IsTruncated {
+		if ctx.Err() != nil {
+			break
+		}
+		listBlobsInput := &ListBlobsInput{
+			Prefix: &prefix,
+			// Get the continuation token from the prior result.
+			ContinuationToken: res.NextContinuationToken,
+		}
+		var err error
+		res, err = fs.storageBackend.ListBlobs(listBlobsInput)
+		if err != nil {
+			return err
+		}
+
+		if len(res.Items) == 0 || !fn(res.Items) {
+			break
+		}
+	}
+	return nil
 }

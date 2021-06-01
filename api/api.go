@@ -187,5 +187,7 @@ var (
 )
 
 type (
-	Goofys = internal.Goofys
+	// Needed to expose new API method ListBlobs()
+	BlobItemOutput = internal.BlobItemOutput
+	Goofys         = internal.Goofys
 )
